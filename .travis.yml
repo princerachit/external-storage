@@ -17,3 +17,4 @@ deploy:
 branches:
   only:
   - release
+  - /^\d+\.\d+(\.\d+)?(-\S*)?$/
