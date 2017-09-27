@@ -17,7 +17,7 @@
 SRC_REPO="$GOPATH/src/github.com/openebs"
 DST_REPO="$GOPATH/src/github.com/kubernetes-incubator"
 
-DIMAGE="openebs/openebs-k8s-provisioner"
+export DIMAGE="openebs/openebs-k8s-provisioner"
 cd $DST_REPO/external-storage/
 make deploy-openebs-provisioner
 
