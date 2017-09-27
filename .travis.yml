@@ -6,11 +6,11 @@ services: docker
 install: true
 
 script:
-  - ./test.sh
+  - ./openebs-build.sh
 
 deploy:
   - provider: script
-    script: ./deploy.sh
+    script: ./openebs-deploy.sh
     on:
       tags: true
 
