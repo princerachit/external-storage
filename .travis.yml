@@ -8,11 +8,8 @@ install: true
 script:
   - ./openebs-build.sh
 
-deploy:
-  - provider: script
-    script: ./openebs-deploy.sh
-    on:
-      tags: true
+after_success:
+  - ./openebs-deploy.sh
 
 branches:
   only:
