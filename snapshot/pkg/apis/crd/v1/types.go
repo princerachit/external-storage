@@ -76,6 +76,7 @@ type VolumeSnapshotCondition struct {
 }
 
 // +genclient=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // VolumeSnapshot is the volume snapshot object accessible to the user. Upon succesful creation of the actual
 // snapshot by the volume provider it is bound to the corresponding VolumeSnapshotData through
@@ -92,6 +93,8 @@ type VolumeSnapshot struct {
 	// +optional
 	Status VolumeSnapshotStatus `json:"status" protobuf:"bytes,3,opt,name=status"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // VolumeSnapshotList is a list of VolumeSnapshot objects
 type VolumeSnapshotList struct {
@@ -120,6 +123,8 @@ type VolumeSnapshotDataStatus struct {
 	// Representes the lates available observations about the volume snapshot
 	Conditions []VolumeSnapshotDataCondition `json:"conditions" protobuf:"bytes,2,rep,name=conditions"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // VolumeSnapshotDataList is a list of VolumeSnapshotData objects
 type VolumeSnapshotDataList struct {
@@ -160,6 +165,7 @@ type VolumeSnapshotDataCondition struct {
 
 // +genclient=true
 // +nonNamespaced=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // VolumeSnapshotData represents the actual "on-disk" snapshot object
 type VolumeSnapshotData struct {
@@ -198,6 +204,12 @@ type HostPathVolumeSnapshotSource struct {
 	Path string `json:"snapshot"`
 }
 
+// GlusterVolumeSnapshotSource is Gluster volume snapshot source
+type GlusterVolumeSnapshotSource struct {
+	// UniqueID represents a snapshot resource.
+	SnapshotID string `json:"snapshotId"`
+}
+
 // AWSElasticBlockStoreVolumeSnapshotSource is AWS EBS volume snapshot source
 type AWSElasticBlockStoreVolumeSnapshotSource struct {
 	// Unique id of the persistent disk snapshot resource. Used to identify the disk snapshot in AWS
@@ -229,6 +241,9 @@ type VolumeSnapshotDataSource struct {
 	// kubelet's host machine and then exposed to the pod.
 	// More info: https://kubernetes.io/docs/concepts/storage/volumes#awselasticblockstore
 	// +optional
+	//GlusterSnapshotSource represents a gluster snapshot resource
+	GlusterSnapshotVolume *GlusterVolumeSnapshotSource `json:"glusterSnapshotVolume,omitempty"`
+	// +optional
 	AWSElasticBlockStore *AWSElasticBlockStoreVolumeSnapshotSource `json:"awsElasticBlockStore,omitempty"`
 	// GCEPersistentDiskSnapshotSource represents an GCE PD snapshot resource
 	// +optional
@@ -252,6 +267,9 @@ func GetSupportedVolumeFromPVSpec(spec *core_v1.PersistentVolumeSpec) string {
 	if spec.Cinder != nil {
 		return "cinder"
 	}
+	if spec.Glusterfs != nil {
+		return "glusterfs"
+	}
 	return ""
 }
 
@@ -268,6 +286,9 @@ func GetSupportedVolumeFromSnapshotDataSpec(spec *VolumeSnapshotDataSpec) string
 	}
 	if spec.CinderSnapshot != nil {
 		return "cinder"
+	}
+	if spec.GlusterSnapshotVolume != nil {
+		return "glusterfs"
 	}
 	return ""
 }
@@ -288,7 +309,7 @@ func (vd *VolumeSnapshotDataList) GetObjectKind() schema.ObjectKind {
 }
 
 // GetListMeta is required to satisfy ListMetaAccessor interface
-func (vd *VolumeSnapshotDataList) GetListMeta() metav1.List {
+func (vd *VolumeSnapshotDataList) GetListMeta() metav1.ListInterface {
 	return &vd.Metadata
 }
 
@@ -308,7 +329,7 @@ func (vd *VolumeSnapshotList) GetObjectKind() schema.ObjectKind {
 }
 
 // GetListMeta is required to satisfy ListMetaAccessor interface
-func (vd *VolumeSnapshotList) GetListMeta() metav1.List {
+func (vd *VolumeSnapshotList) GetListMeta() metav1.ListInterface {
 	return &vd.Metadata
 }
 

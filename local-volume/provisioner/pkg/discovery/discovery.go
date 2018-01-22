@@ -25,6 +25,7 @@ import (
 	"github.com/kubernetes-incubator/external-storage/local-volume/provisioner/pkg/common"
 
 	esUtil "github.com/kubernetes-incubator/external-storage/lib/util"
+	"github.com/kubernetes-incubator/external-storage/local-volume/provisioner/pkg/deleter"
 	"k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/api/v1/helper"
 )
@@ -33,13 +34,16 @@ import (
 // It looks for volumes in the directories specified in the discoveryMap
 type Discoverer struct {
 	*common.RuntimeConfig
-	Labels          map[string]string
+	Labels map[string]string
+	// ProcTable is a reference to running processes so that we can prevent PV from being created while
+	// it is being cleaned
+	ProcTable       deleter.ProcTable
 	nodeAffinityAnn string
 }
 
 // NewDiscoverer creates a Discoverer object that will scan through
 // the configured directories and create local PVs for any new directories found
-func NewDiscoverer(config *common.RuntimeConfig) (*Discoverer, error) {
+func NewDiscoverer(config *common.RuntimeConfig, procTable deleter.ProcTable) (*Discoverer, error) {
 	affinity, err := generateNodeAffinity(config.Node)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to generate node affinity: %v", err)
@@ -61,6 +65,7 @@ func NewDiscoverer(config *common.RuntimeConfig) (*Discoverer, error) {
 	return &Discoverer{
 		RuntimeConfig:   config,
 		Labels:          labelMap,
+		ProcTable:       procTable,
 		nodeAffinityAnn: tmpAnnotations[v1.AlphaStorageNodeAffinityAnnotation]}, nil
 }
 
@@ -106,11 +111,29 @@ func (d *Discoverer) discoverVolumesAtPath(class string, config common.MountConf
 		return
 	}
 
+	// Retreive list of mount points to iterate through discovered paths (aka files) below
+	mountPoints, mountPointsErr := d.RuntimeConfig.Mounter.List()
+	if mountPointsErr != nil {
+		glog.Errorf("Error retreiving mountpoints: %v", err)
+		return
+	}
+	// Put mount moints into set for faster checks below
+	type empty struct{}
+	mountPointMap := make(map[string]empty)
+	for _, mp := range mountPoints {
+		mountPointMap[mp.Path] = empty{}
+	}
+
 	for _, file := range files {
 		// Check if PV already exists for it
 		pvName := generatePVName(file, d.Node.Name, class)
 		_, exists := d.Cache.GetPV(pvName)
 		if exists {
+			continue
+		}
+
+		if d.ProcTable.IsRunning(pvName) {
+			glog.Infof("PV %s is still being cleaned, not going to recreate it", pvName)
 			continue
 		}
 
@@ -124,6 +147,10 @@ func (d *Discoverer) discoverVolumesAtPath(class string, config common.MountConf
 		var capacityByte int64
 		switch volType {
 		case common.VolumeTypeBlock:
+			if d.RuntimeConfig.BlockDisabled {
+				glog.Warningf("Block device (%q) PVs are currently disabled", filePath)
+				continue
+			}
 			capacityByte, err = d.VolUtil.GetBlockCapacityByte(filePath)
 			if err != nil {
 				glog.Errorf("Path %q block stats error: %v", filePath, err)
@@ -140,6 +167,11 @@ func (d *Discoverer) discoverVolumesAtPath(class string, config common.MountConf
 			continue
 		}
 
+		// Validate that this path is an actual mountpoint
+		if _, isMntPnt := mountPointMap[filePath]; isMntPnt == false {
+			glog.Errorf("Path %q is not an actual mountpoint", filePath)
+			continue
+		}
 		d.createPV(file, class, config, capacityByte, volType)
 	}
 }

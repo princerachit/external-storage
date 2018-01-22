@@ -19,6 +19,7 @@ package common
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"strings"
 
@@ -31,8 +32,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/kubelet/apis"
+	"k8s.io/kubernetes/pkg/util/mount"
+	"path/filepath"
 )
 
 const (
@@ -46,10 +51,8 @@ const (
 	// VolumeTypeBlock represents block type volumes
 	VolumeTypeBlock = "block"
 
-	// DefaultHostDir is the default host dir to discover local volumes.
-	DefaultHostDir = "/mnt/disks"
-	// DefaultMountDir is the container mount point for the default host dir.
-	DefaultMountDir = "/local-disks"
+	// DefaultBlockCleanerCommand is the default block device cleaning command
+	DefaultBlockCleanerCommand = "/scripts/quick_reset.sh"
 
 	// EventVolumeFailedDelete copied from k8s.io/kubernetes/pkg/controller/volume/events
 	EventVolumeFailedDelete = "VolumeFailedDelete"
@@ -60,6 +63,13 @@ const (
 	ProvisonerStorageClassConfig = "storageClassMap"
 	// ProvisionerNodeLabelsForPV contains a list of node labels to be copied to the PVs created by the provisioner
 	ProvisionerNodeLabelsForPV = "nodeLabelsForPV"
+	// VolumeDelete copied from k8s.io/kubernetes/pkg/controller/volume/events
+	VolumeDelete = "VolumeDelete"
+
+	// LocalPVEnv will contain the device path when script is invoked
+	LocalPVEnv = "LOCAL_PV_BLKDEVICE"
+	// KubeConfigEnv will (optionally) specify the location of kubeconfig file on the node.
+	KubeConfigEnv = "KUBECONFIG"
 )
 
 // UserConfig stores all the user-defined parameters to the provisioner
@@ -78,6 +88,8 @@ type MountConfig struct {
 	HostDir string `json:"hostDir" yaml:"hostDir"`
 	// The mount point of the hostpath volume
 	MountDir string `json:"mountDir" yaml:"mountDir"`
+	// The type of block cleaner to use
+	BlockCleanerCommand []string `json:"blockCleanerCommand" yaml:"blockCleanerCommand"`
 }
 
 // RuntimeConfig stores all the objects that the provisioner needs to run
@@ -95,6 +107,10 @@ type RuntimeConfig struct {
 	VolUtil util.VolumeUtil
 	// Recorder is used to record events in the API server
 	Recorder record.EventRecorder
+	// Disable block device discovery and management if true
+	BlockDisabled bool
+	// Mounter used to verify mountpoints
+	Mounter mount.Interface
 }
 
 // LocalPVConfig defines the parameters for creating a local PV
@@ -108,14 +124,21 @@ type LocalPVConfig struct {
 	Labels          map[string]string
 }
 
+// BuildConfigFromFlags being defined to enable mocking during unit testing
+var BuildConfigFromFlags = clientcmd.BuildConfigFromFlags
+
+// InClusterConfig being defined to enable mocking during unit testing
+var InClusterConfig = rest.InClusterConfig
+
 // ProvisionerConfiguration defines Provisioner configuration objects
 // Each configuration key of the struct e.g StorageClassConfig is individually
 // marshaled in VolumeConfigToConfigMapData.
-// TODO Need to find a way to marshal the struct  more efficiently.
+// TODO Need to find a way to marshal the struct more efficiently.
 type ProvisionerConfiguration struct {
 	// StorageClassConfig defines configuration of Provisioner's storage classes
 	StorageClassConfig map[string]MountConfig `json:"storageClassMap" yaml:"storageClassMap"`
 	// NodeLabelsForPV contains a list of node labels to be copied to the PVs created by the provisioner
+	// +optional
 	NodeLabelsForPV []string `json:"nodeLabelsForPV" yaml:"nodeLabelsForPV"`
 }
 
@@ -148,7 +171,17 @@ func CreateLocalPVSpec(config *LocalPVConfig) *v1.PersistentVolume {
 	}
 }
 
-// GetVolumeConfigFromConfigMap gets volume configuration from given configmap,
+// GetContainerPath gets the local path (within provisioner container) of the PV
+func GetContainerPath(pv *v1.PersistentVolume, config MountConfig) (string, error) {
+	relativePath, err := filepath.Rel(config.HostDir, pv.Spec.Local.Path)
+	if err != nil {
+		return "", fmt.Errorf("Could not get relative path for pv %q: %v", pv.Name, err)
+	}
+
+	return filepath.Join(config.MountDir, relativePath), nil
+}
+
+// GetVolumeConfigFromConfigMap gets volume configuration from given configmap.
 func GetVolumeConfigFromConfigMap(client *kubernetes.Clientset, namespace, name string, provisionerConfig *ProvisionerConfiguration) error {
 	configMap, err := client.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
@@ -156,16 +189,6 @@ func GetVolumeConfigFromConfigMap(client *kubernetes.Clientset, namespace, name 
 	}
 	err = ConfigMapDataToVolumeConfig(configMap.Data, provisionerConfig)
 	return err
-}
-
-// GetDefaultVolumeConfig returns the default volume configuration.
-func GetDefaultVolumeConfig(provisionerConfig *ProvisionerConfiguration) {
-	provisionerConfig.StorageClassConfig = map[string]MountConfig{
-		"local-storage": {
-			HostDir:  DefaultHostDir,
-			MountDir: DefaultMountDir,
-		},
-	}
 }
 
 // VolumeConfigToConfigMapData converts volume config to configmap data.
@@ -183,10 +206,11 @@ func VolumeConfigToConfigMapData(config *ProvisionerConfiguration) (map[string]s
 		}
 		configMapData[ProvisionerNodeLabelsForPV] = string(nodeLabels)
 	}
+
 	return configMapData, nil
 }
 
-// ConfigMapDataToVolumeConfig converts configmap data to volume config
+// ConfigMapDataToVolumeConfig converts configmap data to volume config.
 func ConfigMapDataToVolumeConfig(data map[string]string, provisionerConfig *ProvisionerConfiguration) error {
 	rawYaml := ""
 	for key, val := range data {
@@ -194,8 +218,24 @@ func ConfigMapDataToVolumeConfig(data map[string]string, provisionerConfig *Prov
 		rawYaml += ": \n"
 		rawYaml += insertSpaces(string(val))
 	}
+
 	if err := yaml.Unmarshal([]byte(rawYaml), provisionerConfig); err != nil {
 		return fmt.Errorf("fail to Unmarshal yaml due to: %#v", err)
+	}
+	for class, config := range provisionerConfig.StorageClassConfig {
+		if config.BlockCleanerCommand == nil {
+			// Supply a default block cleaner command.
+			config.BlockCleanerCommand = []string{DefaultBlockCleanerCommand}
+		} else {
+			// Validate that array is non empty.
+			if len(config.BlockCleanerCommand) < 1 {
+				return fmt.Errorf("Invalid empty block cleaner command for class %v", class)
+			}
+		}
+		if config.MountDir == "" || config.HostDir == "" {
+			return fmt.Errorf("Storage Class %v is misconfigured, missing HostDir or MountDir parameter", class)
+		}
+		provisionerConfig.StorageClassConfig[class] = config
 	}
 	return nil
 }
@@ -220,17 +260,43 @@ func LoadProvisionerConfigs(provisionerConfig *ProvisionerConfiguration) error {
 	data := make(map[string]string)
 	for _, file := range files {
 		if !file.IsDir() {
-			fileContents, err := ioutil.ReadFile(path.Join(ProvisionerConfigPath, file.Name()))
-			if err != nil {
-				// TODO Currently errors in reading configuration keys/files are ignored. This is due to
-				// the precense of "..data" file, it is a symbolic link which gets created when kubelet mounts a
-				// configmap inside of a container. It needs to be revisited later for a safer solution, if ignoring read errors
-				// will prove to be causing issues.
-				glog.Infof("Could not read file: %s due to: %v", path.Join(ProvisionerConfigPath, file.Name()), err)
-				continue
+			if strings.Compare(file.Name(), "..data") != 0 {
+				fileContents, err := ioutil.ReadFile(path.Join(ProvisionerConfigPath, file.Name()))
+				if err != nil {
+					glog.Infof("Could not read file: %s due to: %v", path.Join(ProvisionerConfigPath, file.Name()), err)
+					return err
+				}
+				data[file.Name()] = string(fileContents)
 			}
-			data[file.Name()] = string(fileContents)
 		}
 	}
 	return ConfigMapDataToVolumeConfig(data, provisionerConfig)
+}
+
+// SetupClient created client using either in-cluster configuration or if KUBECONFIG environment variable is specified then using that config.
+func SetupClient() *kubernetes.Clientset {
+	var config *rest.Config
+	var err error
+
+	kubeconfigFile := os.Getenv(KubeConfigEnv)
+	if kubeconfigFile != "" {
+		config, err = BuildConfigFromFlags("", kubeconfigFile)
+		if err != nil {
+			glog.Fatalf("Error creating config from %s specified file: %s %v\n", KubeConfigEnv,
+				kubeconfigFile, err)
+		}
+		glog.Infof("Creating client using kubeconfig file %s", kubeconfigFile)
+	} else {
+		config, err = InClusterConfig()
+		if err != nil {
+			glog.Fatalf("Error creating InCluster config: %v\n", err)
+		}
+		glog.Infof("Creating client using in-cluster config")
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		glog.Fatalf("Error creating clientset: %v\n", err)
+	}
+	return clientset
 }

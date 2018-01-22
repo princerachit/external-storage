@@ -23,7 +23,6 @@ import (
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiRemotecommand "k8s.io/apimachinery/pkg/util/remotecommand"
 	"k8s.io/client-go/tools/remotecommand"
 )
 
@@ -64,7 +63,7 @@ func (p *glusterfsProvisioner) ExecuteCommand(
 		req.Param("command", c)
 	}
 
-	exec, err := remotecommand.NewExecutor(p.config, "POST", req.URL())
+	exec, err := remotecommand.NewSPDYExecutor(p.config, "POST", req.URL())
 	if err != nil {
 		glog.Fatalf("Failed to create NewExecutor: %v", err)
 		return err
@@ -74,10 +73,9 @@ func (p *glusterfsProvisioner) ExecuteCommand(
 	var berr bytes.Buffer
 
 	err = exec.Stream(remotecommand.StreamOptions{
-		SupportedProtocols: apiRemotecommand.SupportedStreamingProtocols,
-		Stdout:             &b,
-		Stderr:             &berr,
-		Tty:                false,
+		Stdout: &b,
+		Stderr: &berr,
+		Tty:    false,
 	})
 
 	glog.Infof("Result: %v", b.String())
@@ -93,7 +91,7 @@ func (p *glusterfsProvisioner) ExecuteCommand(
 func (p *glusterfsProvisioner) selectPod(host string,
 	config *ProvisionerConfig) (*v1.Pod, error) {
 
-	podList, err := p.client.Core().
+	podList, err := p.client.CoreV1().
 		Pods(config.Namespace).
 		List(meta_v1.ListOptions{
 			LabelSelector: config.LabelSelector,

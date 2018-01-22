@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang/glog"
 
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/kubernetes/pkg/volume/util"
 )
 
@@ -111,15 +112,15 @@ func (u *volumeUtil) DeleteContents(fullPath string) error {
 	if err != nil {
 		return err
 	}
-
+	errList := []error{}
 	for _, file := range files {
 		err = os.RemoveAll(filepath.Join(fullPath, file))
 		if err != nil {
-			// TODO: accumulate errors
-			return err
+			errList = append(errList, err)
 		}
 	}
-	return nil
+
+	return utilerrors.NewAggregate(errList)
 }
 
 // GetFsCapacityByte returns capacity in bytes about a mounted filesystem.
@@ -159,9 +160,9 @@ type FakeDirEntry struct {
 }
 
 // NewFakeVolumeUtil returns a VolumeUtil object for use in unit testing
-func NewFakeVolumeUtil(deleteShouldFail bool) *FakeVolumeUtil {
+func NewFakeVolumeUtil(deleteShouldFail bool, dirFiles map[string][]*FakeDirEntry) *FakeVolumeUtil {
 	return &FakeVolumeUtil{
-		directoryFiles:   map[string][]*FakeDirEntry{},
+		directoryFiles:   dirFiles,
 		deleteShouldFail: deleteShouldFail,
 	}
 }
