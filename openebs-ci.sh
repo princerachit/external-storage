@@ -14,14 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-SRC_REPO=`pwd`
 DST_REPO="$GOPATH/src/github.com/kubernetes-incubator"
+export DST_REPO
 
-mkdir -p $DST_REPO
-cp -R $SRC_REPO/../external-storage $DST_REPO
-cd $DST_REPO/external-storage
-make openebs
+export DIMAGE="openebs/openebs-k8s-provisioner"
+cd $DST_REPO/external-storage/
+make push-openebs-provisioner
+rc=$?; if [[ $rc != 0 ]]; then exit $rc; fi
 
-
-
+$DST_REPO/external-storage/openebs/ci/travis-ci.sh
+rc=$?; if [[ $rc != 0 ]]; then exit $rc; fi
 
