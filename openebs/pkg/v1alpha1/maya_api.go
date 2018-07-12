@@ -26,10 +26,10 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	mayav1 "github.com/kubernetes-incubator/external-storage/openebs/types/v1"
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"github.com/kubernetes-incubator/external-storage/openebs/types/v1alpha1"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 
 //OpenEBSVolumeInterface Interface to bind methods
 type OpenEBSVolumeInterface interface {
-	CreateVolume(mayav1.VolumeSpec) (string, error)
+	CreateVolume(volume v1alpha1.CASVolume) (string, error)
 	ListVolume(string, interface{}) error
 	DeleteVolume(string) error
 }
@@ -60,7 +60,7 @@ func (v OpenEBSVolume) GetMayaClusterIP(client kubernetes.Interface) (string, er
 		namespace = "default"
 	}
 
-	glog.Info("OpenEBS volume provisioner namespace ", namespace)
+	glog.Info("OpenEBS volume provisioner namespace in v1alpha1", namespace)
 
 	//Fetch the Maya ClusterIP using the Maya API Server Service
 	mayaAPIServiceName := os.Getenv("OPENEBS_MAYA_SERVICE_NAME")
@@ -80,7 +80,7 @@ func (v OpenEBSVolume) GetMayaClusterIP(client kubernetes.Interface) (string, er
 }
 
 // CreateVolume to create the Vsm through a API call to m-apiserver
-func (v OpenEBSVolume) CreateVolume(vs mayav1.VolumeSpec) (string, error) {
+func (v OpenEBSVolume) CreateVolume(csv v1alpha1.CASVolume) (string, error) {
 
 	addr := os.Getenv("MAPI_ADDR")
 	if addr == "" {
@@ -90,13 +90,13 @@ func (v OpenEBSVolume) CreateVolume(vs mayav1.VolumeSpec) (string, error) {
 	}
 	url := addr + "/latest/volumes/"
 
-	vs.Kind = "PersistentVolumeClaim"
-	vs.APIVersion = "v1"
+	csv.Kind = "CASVolume"
+	csv.APIVersion = "v1alpha1"
 
 	//Marshal serializes the value provided into a YAML document
-	yamlValue, _ := yaml.Marshal(vs)
+	yamlValue, _ := yaml.Marshal(csv)
 
-	glog.V(2).Infof("[DEBUG] volume Spec Created:\n%v\n", string(yamlValue))
+	glog.V(2).Infof("[DEBUG] cas volume Created:\n%v\n", string(yamlValue))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(yamlValue))
 

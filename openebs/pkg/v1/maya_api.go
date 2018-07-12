@@ -60,7 +60,7 @@ func (v OpenEBSVolume) GetMayaClusterIP(client kubernetes.Interface) (string, er
 		namespace = "default"
 	}
 
-	glog.Info("OpenEBS volume provisioner namespace ", namespace)
+	glog.Info("OpenEBS volume provisioner default namespace ", namespace)
 
 	//Fetch the Maya ClusterIP using the Maya API Server Service
 	mayaAPIServiceName := os.Getenv("OPENEBS_MAYA_SERVICE_NAME")

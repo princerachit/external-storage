@@ -9,11 +9,12 @@ import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"github.com/kubernetes-incubator/external-storage/lib/util"
-	mApiv1alpha1 "github.com/kubernetes-incubator/external-storage/openebs/pkg/v1alpha1"
 	mayav1 "github.com/kubernetes-incubator/external-storage/openebs/types/v1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	mApiv1alpha1 "github.com/kubernetes-incubator/external-storage/openebs/pkg/v1alpha1"
+	"github.com/kubernetes-incubator/external-storage/openebs/types/v1alpha1"
 )
 
 type openEBSProvisionerV1alpha1 struct {
@@ -25,7 +26,7 @@ type openEBSProvisionerV1alpha1 struct {
 	identity string
 }
 
-// NewOpenEBSProvisioner creates a new openebs provisioner
+// NewOpenEBSProvisionerV1alpha1 creates a new openebs provisioner
 func NewOpenEBSProvisionerV1alpha1(client kubernetes.Interface) controller.Provisioner {
 
 	nodeName := os.Getenv("NODE_NAME")
@@ -58,28 +59,30 @@ func (p *openEBSProvisionerV1alpha1) Provision(options controller.VolumeOptions)
 	//Issue a request to Maya API Server to create a volume
 	var volume mayav1.Volume
 	var openebsVol mApiv1alpha1.OpenEBSVolume
-	volumeSpec := mayav1.VolumeSpec{}
+	casVolume := v1alpha1.CASVolume{}
 
 	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	volumeSpec.Metadata.Labels.Storage = volSize.String()
+	casVolume.Spec.Capacity = volSize.String()
 
 	className := GetStorageClassName(options)
 
 	if className == nil {
 		glog.Errorf("Volume has no storage class specified")
 	} else {
-		volumeSpec.Metadata.Labels.StorageClass = *className
+		casVolume.Labels[string(v1alpha1.StorageClassCVK)] = *className
 	}
-	volumeSpec.Metadata.Labels.Namespace = options.PVC.Namespace
-	volumeSpec.Metadata.Labels.PersistentVolumeClaim = options.PVC.ObjectMeta.Name
-	volumeSpec.Metadata.Name = options.PVName
+	casVolume.Labels[string(v1alpha1.NamespaceCVK)] = options.PVC.Namespace
+	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimCVK)] = options.PVC.ObjectMeta.Name
+	casVolume.Name = options.PVName
 
+	/* Code requires corresponding changes in maya api server. Require below when done.
 	//Pass through labels from PVC to maya-apiserver
-	volumeSpec.Metadata.Labels.Application = options.PVC.ObjectMeta.GetLabels()[mayav1.PVCLabelsApplication]
-	volumeSpec.Metadata.Labels.ReplicaTopoKeyDomain = options.PVC.ObjectMeta.GetLabels()[mayav1.PVCLabelsReplicaTopKeyDomain]
-	volumeSpec.Metadata.Labels.ReplicaTopoKeyType = options.PVC.ObjectMeta.GetLabels()[mayav1.PVCLabelsReplicaTopKeyType]
-
-	_, err := openebsVol.CreateVolume(volumeSpec)
+	casVolume.Metadata.Labels.Application = options.PVC.ObjectMeta.GetLabels()[mayav1.PVCLabelsApplication]
+	casVolume.Metadata.Labels.ReplicaTopoKeyDomain = options.PVC.ObjectMeta.GetLabels()[mayav1.PVCLabelsReplicaTopKeyDomain]
+	casVolume.Metadata.Labels.ReplicaTopoKeyType = options.PVC.ObjectMeta.GetLabels()[mayav1.PVCLabelsReplicaTopKeyType]
+	*/
+	glog.Infof("cas volume object generated: %+v", casVolume)
+	_, err := openebsVol.CreateVolume(casVolume)
 	if err != nil {
 		glog.Errorf("Error creating volume: %v", err)
 		return nil, err

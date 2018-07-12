@@ -26,7 +26,7 @@ push:
 
 deploy:
 	@cp openebs-provisioner buildscripts/docker/
-	@cd buildscripts/docker && sudo docker build -t ${DIMAGE}:ci .
+	@cd buildscripts/docker && sudo docker build -t rachitprince/openebs-provisioner:v1alpha1 .
 	@sh buildscripts/push
 
 clean:

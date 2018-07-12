@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	maya_util "github.com/openebs/maya/pkg/util"
+	env_util "github.com/kubernetes-incubator/external-storage/openebs/pkg/util"
 )
 
 const (
@@ -275,8 +275,7 @@ func main() {
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller.
 	// Create v1alpha1 provisioner if gated feature is on
-	if maya_util.CASTemplateFeatureGate() {
-		glog.Infof("Gated feature is on for v1alpha1")
+	if env_util.CASTemplateFeatureGate() {
 		provisioner = NewOpenEBSProvisionerV1alpha1(clientset)
 	} else {
 		provisioner = NewOpenEBSProvisioner(clientset)
