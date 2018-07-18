@@ -80,7 +80,7 @@ var startcontrollerCmd = &cobra.Command{
 		iscsiProvisioner := provisioner.NewiscsiProvisioner(url)
 		log.Debugln("iscsi provisioner created")
 
-		pc := controller.NewProvisionController(kubernetesClientSet, viper.GetString("provisioner-name"), iscsiProvisioner, serverVersion.GitVersion)
+		pc := controller.NewProvisionController(kubernetesClientSet, viper.GetString("provisioner-name"), iscsiProvisioner, serverVersion.GitVersion, controller.Threadiness(1))
 		controller.ResyncPeriod(viper.GetDuration("resync-period"))
 		controller.ExponentialBackOffOnError(viper.GetBool("exponential-backoff-on-error"))
 		controller.FailedProvisionThreshold(viper.GetInt("fail-retry-threshold"))
@@ -96,7 +96,7 @@ var startcontrollerCmd = &cobra.Command{
 
 func init() {
 	RootCmd.AddCommand(startcontrollerCmd)
-	startcontrollerCmd.Flags().String("provisioner-name", "iscsi-provisioner", "name of this provisioner, must match what is passed int the storage class annotation")
+	startcontrollerCmd.Flags().String("provisioner-name", "iscsi-targetd", "name of this provisioner, must match what is passed in the storage class annotation")
 	viper.BindPFlag("provisioner-name", startcontrollerCmd.Flags().Lookup("provisioner-name"))
 	startcontrollerCmd.Flags().Duration("resync-period", controller.DefaultResyncPeriod, "how often to poll the master API for updates")
 	viper.BindPFlag("resync-period", startcontrollerCmd.Flags().Lookup("resync-period"))

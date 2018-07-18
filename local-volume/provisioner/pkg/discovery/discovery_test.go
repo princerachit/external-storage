@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/golang/glog"
 	esUtil "github.com/kubernetes-incubator/external-storage/lib/util"
 	"github.com/kubernetes-incubator/external-storage/local-volume/provisioner/pkg/cache"
 	"github.com/kubernetes-incubator/external-storage/local-volume/provisioner/pkg/common"
@@ -29,8 +30,12 @@ import (
 	"github.com/kubernetes-incubator/external-storage/local-volume/provisioner/pkg/util"
 
 	"k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/apis/core/v1/helper"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/util/mount"
 )
 
@@ -65,6 +70,23 @@ var testNode = &v1.Node{
 	},
 }
 
+var reclaimPolicyDelete = v1.PersistentVolumeReclaimDelete
+
+var testStorageClasses = []*storagev1.StorageClass{
+	{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sc1",
+		},
+		ReclaimPolicy: &reclaimPolicyDelete,
+	},
+	{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sc2",
+		},
+		ReclaimPolicy: &reclaimPolicyDelete,
+	},
+}
+
 var scMapping = map[string]common.MountConfig{
 	"sc1": {
 		HostDir:  testHostDir + "/dir1",
@@ -86,10 +108,10 @@ type testConfig struct {
 	// True if testing api failure
 	apiShouldFail bool
 	// The rest are set during setup
-	volUtil   *util.FakeVolumeUtil
-	apiUtil   *util.FakeAPIUtil
-	cache     *cache.VolumeCache
-	procTable *deleter.ProcTableImpl
+	volUtil        *util.FakeVolumeUtil
+	apiUtil        *util.FakeAPIUtil
+	cache          *cache.VolumeCache
+	cleanupTracker *deleter.CleanupStatusTracker
 }
 
 func TestDiscoverVolumes_Basic(t *testing.T) {
@@ -273,7 +295,7 @@ func TestDiscoverVolumes_CleaningInProgress(t *testing.T) {
 
 	// Mark dir1/mount2 PV as being cleaned. This one should not get created
 	pvName := getPVName(vols["dir1"][1])
-	test.procTable.MarkRunning(pvName)
+	test.cleanupTracker.ProcTable.MarkRunning(pvName)
 
 	d.DiscoverLocalVolumes()
 	verifyCreatedPVs(t, test)
@@ -284,7 +306,8 @@ func testSetup(t *testing.T, test *testConfig, useAlphaAPI bool) *Discoverer {
 	test.volUtil = util.NewFakeVolumeUtil(false /*deleteShouldFail*/, map[string][]*util.FakeDirEntry{})
 	test.volUtil.AddNewDirEntries(testMountDir, test.dirLayout)
 	test.apiUtil = util.NewFakeAPIUtil(test.apiShouldFail, test.cache)
-	test.procTable = deleter.NewProcTable()
+	test.cleanupTracker = &deleter.CleanupStatusTracker{ProcTable: deleter.NewProcTable(),
+		JobController: deleter.NewFakeJobController()}
 
 	fm := &mount.FakeMounter{
 		MountPoints: []mount.MountPoint{
@@ -305,17 +328,32 @@ func testSetup(t *testing.T, test *testConfig, useAlphaAPI bool) *Discoverer {
 		NodeLabelsForPV: nodeLabelsForPV,
 		UseAlphaAPI:     useAlphaAPI,
 	}
-	runConfig := &common.RuntimeConfig{
-		UserConfig: userConfig,
-		Cache:      test.cache,
-		VolUtil:    test.volUtil,
-		APIUtil:    test.apiUtil,
-		Name:       testProvisionerName,
-		Mounter:    fm,
+	objects := make([]runtime.Object, 0)
+	for _, o := range testStorageClasses {
+		objects = append(objects, runtime.Object(o))
 	}
-	d, err := NewDiscoverer(runConfig, test.procTable)
+	client := fake.NewSimpleClientset(objects...)
+	runConfig := &common.RuntimeConfig{
+		UserConfig:      userConfig,
+		Cache:           test.cache,
+		VolUtil:         test.volUtil,
+		APIUtil:         test.apiUtil,
+		Name:            testProvisionerName,
+		Mounter:         fm,
+		Client:          client,
+		InformerFactory: informers.NewSharedInformerFactory(client, 0),
+	}
+	d, err := NewDiscoverer(runConfig, test.cleanupTracker)
 	if err != nil {
 		t.Fatalf("Error setting up test discoverer: %v", err)
+	}
+	// Start informers after all event listeners are registered.
+	runConfig.InformerFactory.Start(wait.NeverStop)
+	// Wait for all started informers' cache were synced.
+	for v, synced := range runConfig.InformerFactory.WaitForCacheSync(wait.NeverStop) {
+		if !synced {
+			glog.Fatalf("Error syncing informer for %v", v)
+		}
 	}
 	return d
 }
@@ -339,7 +377,7 @@ func verifyNodeAffinity(t *testing.T, pv *v1.PersistentVolume) {
 
 	volumeNodeAffinity = pv.Spec.NodeAffinity
 	if volumeNodeAffinity == nil {
-		nodeAffinity, err = helper.GetStorageNodeAffinityFromAnnotation(pv.Annotations)
+		nodeAffinity, err = GetStorageNodeAffinityFromAnnotation(pv.Annotations)
 		if err != nil {
 			t.Errorf("Could not get node affinity from annotation: %v", err)
 			return

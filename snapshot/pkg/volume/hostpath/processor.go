@@ -55,7 +55,11 @@ func GetPluginName() string {
 func (h *hostPathPlugin) Init(_ cloudprovider.Interface) {
 }
 
-func (h *hostPathPlugin) SnapshotCreate(pv *v1.PersistentVolume, tags *map[string]string) (*crdv1.VolumeSnapshotDataSource, *[]crdv1.VolumeSnapshotCondition, error) {
+func (h *hostPathPlugin) SnapshotCreate(
+	snapshot *crdv1.VolumeSnapshot,
+	pv *v1.PersistentVolume,
+	tags *map[string]string,
+) (*crdv1.VolumeSnapshotDataSource, *[]crdv1.VolumeSnapshotCondition, error) {
 	spec := &pv.Spec
 	if spec == nil || spec.HostPath == nil {
 		return nil, nil, fmt.Errorf("invalid PV spec %v", spec)
@@ -139,11 +143,7 @@ func (h *hostPathPlugin) FindSnapshot(tags *map[string]string) (*crdv1.VolumeSna
 	glog.Infof("FindSnapshot by tags: %#v", *tags)
 
 	// TODO: Implement FindSnapshot
-	return &crdv1.VolumeSnapshotDataSource{
-		HostPath: &crdv1.HostPathVolumeSnapshotSource{
-			Path: "",
-		},
-	}, nil, nil
+	return nil, nil, fmt.Errorf("Snapshot not found")
 }
 
 func (h *hostPathPlugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapshotData, _ *v1.PersistentVolumeClaim, _ string, _ map[string]string) (*v1.PersistentVolumeSource, map[string]string, error) {
