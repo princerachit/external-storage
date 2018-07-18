@@ -1,7 +1,3 @@
-os:
-  - osx
-  - linux
-
 language: go
 env:
 - CHANGE_MINIKUBE_NONE_USER=true
