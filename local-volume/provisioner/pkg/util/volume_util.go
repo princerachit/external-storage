@@ -18,14 +18,13 @@ package util
 
 import (
 	"fmt"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 
 	"github.com/golang/glog"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/kubernetes/pkg/volume/util"
+	"k8s.io/kubernetes/pkg/volume/util/fs"
 )
 
 // VolumeUtil is an interface for local filesystem operations
@@ -74,17 +73,6 @@ func (u *volumeUtil) IsDir(fullPath string) (bool, error) {
 	return stat.IsDir(), nil
 }
 
-// IsBlock checks if the given path is a block device
-func (u *volumeUtil) IsBlock(fullPath string) (bool, error) {
-	var st unix.Stat_t
-	err := unix.Stat(fullPath, &st)
-	if err != nil {
-		return false, err
-	}
-
-	return (st.Mode & unix.S_IFMT) == unix.S_IFBLK, nil
-}
-
 // ReadDir returns a list all the files under the given directory
 func (u *volumeUtil) ReadDir(fullPath string) ([]string, error) {
 	dir, err := os.Open(fullPath)
@@ -127,7 +115,7 @@ func (u *volumeUtil) DeleteContents(fullPath string) error {
 // fullPath is the pathname of any file within the mounted filesystem. Capacity
 // returned here is total capacity.
 func (u *volumeUtil) GetFsCapacityByte(fullPath string) (int64, error) {
-	_, capacity, _, _, _, _, err := util.FsInfo(fullPath)
+	_, capacity, _, _, _, _, err := fs.FsInfo(fullPath)
 	return capacity, err
 }
 

@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kvol "k8s.io/kubernetes/pkg/volume"
+	kvol "k8s.io/kubernetes/pkg/volume/util"
 
 	"github.com/golang/glog"
 
@@ -53,7 +53,11 @@ func (a *awsEBSPlugin) Init(cloud cloudprovider.Interface) {
 	a.cloud = cloud.(*aws.Cloud)
 }
 
-func (a *awsEBSPlugin) SnapshotCreate(pv *v1.PersistentVolume, tags *map[string]string) (*crdv1.VolumeSnapshotDataSource, *[]crdv1.VolumeSnapshotCondition, error) {
+func (a *awsEBSPlugin) SnapshotCreate(
+	snapshot *crdv1.VolumeSnapshot,
+	pv *v1.PersistentVolume,
+	tags *map[string]string,
+) (*crdv1.VolumeSnapshotDataSource, *[]crdv1.VolumeSnapshotCondition, error) {
 	spec := &pv.Spec
 	if spec == nil || spec.AWSElasticBlockStore == nil {
 		return nil, nil, fmt.Errorf("invalid PV spec %v", spec)
@@ -106,11 +110,7 @@ func (a *awsEBSPlugin) FindSnapshot(tags *map[string]string) (*crdv1.VolumeSnaps
 	glog.Infof("FindSnapshot by tags: %#v", *tags)
 
 	// TODO: Implement FindSnapshot
-	return &crdv1.VolumeSnapshotDataSource{
-		AWSElasticBlockStore: &crdv1.AWSElasticBlockStoreVolumeSnapshotSource{
-			SnapshotID: "",
-		},
-	}, nil, nil
+	return nil, nil, fmt.Errorf("Snapshot not found")
 }
 
 func (a *awsEBSPlugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapshotData, pvc *v1.PersistentVolumeClaim, pvName string, parameters map[string]string) (*v1.PersistentVolumeSource, map[string]string, error) {
