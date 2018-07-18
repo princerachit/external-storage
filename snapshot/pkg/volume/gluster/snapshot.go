@@ -52,7 +52,11 @@ func GetPluginName() string {
 func (h *glusterfsPlugin) Init(_ cloudprovider.Interface) {
 }
 
-func (h *glusterfsPlugin) SnapshotCreate(pv *v1.PersistentVolume, tags *map[string]string) (*crdv1.VolumeSnapshotDataSource, *[]crdv1.VolumeSnapshotCondition, error) {
+func (h *glusterfsPlugin) SnapshotCreate(
+	snapshot *crdv1.VolumeSnapshot,
+	pv *v1.PersistentVolume,
+	tags *map[string]string,
+) (*crdv1.VolumeSnapshotDataSource, *[]crdv1.VolumeSnapshotCondition, error) {
 	spec := &pv.Spec
 	if spec == nil || spec.Glusterfs == nil {
 		return nil, nil, fmt.Errorf("invalid PV spec %v", spec)
@@ -170,11 +174,7 @@ func (h *glusterfsPlugin) FindSnapshot(tags *map[string]string) (*crdv1.VolumeSn
 	glog.Infof("FindSnapshot by tags: %#v", *tags)
 
 	// TODO: Implement FindSnapshot
-	return &crdv1.VolumeSnapshotDataSource{
-		GlusterSnapshotVolume: &crdv1.GlusterVolumeSnapshotSource{
-			SnapshotID: "",
-		},
-	}, nil, nil
+	return nil, nil, fmt.Errorf("Snapshot not found")
 }
 
 func (h *glusterfsPlugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapshotData, _ *v1.PersistentVolumeClaim, _ string, _ map[string]string) (*v1.PersistentVolumeSource, map[string]string, error) {

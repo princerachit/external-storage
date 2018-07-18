@@ -29,9 +29,12 @@ import (
 	"github.com/kubernetes-incubator/external-storage/local-volume/provisioner/pkg/cache"
 	"github.com/kubernetes-incubator/external-storage/local-volume/provisioner/pkg/util"
 
+	"hash/fnv"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -61,6 +64,9 @@ const (
 	ProvisionerNodeLabelsForPV = "nodeLabelsForPV"
 	// ProvisionerUseAlphaAPI shows if we need to use alpha API, default to false
 	ProvisionerUseAlphaAPI = "useAlphaAPI"
+	// AlphaStorageNodeAffinityAnnotation defines node affinity policies for a PersistentVolume.
+	// Value is a string of the json representation of type NodeAffinity
+	AlphaStorageNodeAffinityAnnotation = "volume.alpha.kubernetes.io/node-affinity"
 	// VolumeDelete copied from k8s.io/kubernetes/pkg/controller/volume/events
 	VolumeDelete = "VolumeDelete"
 
@@ -68,6 +74,9 @@ const (
 	LocalPVEnv = "LOCAL_PV_BLKDEVICE"
 	// KubeConfigEnv will (optionally) specify the location of kubeconfig file on the node.
 	KubeConfigEnv = "KUBECONFIG"
+
+	// NodeNameLabel is the name of the label that holds the nodename
+	NodeNameLabel = "kubernetes.io/hostname"
 )
 
 // UserConfig stores all the user-defined parameters to the provisioner
@@ -80,6 +89,15 @@ type UserConfig struct {
 	NodeLabelsForPV []string
 	// UseAlphaAPI shows if we need to use alpha API
 	UseAlphaAPI bool
+	// UseJobForCleaning indicates if Jobs should be spawned for cleaning block devices (as opposed to process),.
+	UseJobForCleaning bool
+	// Namespace of this Pod (optional)
+	Namespace string
+	// Image of container to use for jobs (optional)
+	JobContainerImage string
+	// MinResyncPeriod is minimum resync period. Resync period in reflectors
+	// will be random between MinResyncPeriod and 2*MinResyncPeriod.
+	MinResyncPeriod metav1.Duration
 }
 
 // MountConfig stores a configuration for discoverying a specific storageclass
@@ -98,7 +116,7 @@ type RuntimeConfig struct {
 	// Unique name of this provisioner
 	Name string
 	// K8s API client
-	Client *kubernetes.Clientset
+	Client kubernetes.Interface
 	// Cache to store PVs managed by this provisioner
 	Cache *cache.VolumeCache
 	// K8s API layer
@@ -111,6 +129,8 @@ type RuntimeConfig struct {
 	BlockDisabled bool
 	// Mounter used to verify mountpoints
 	Mounter mount.Interface
+	// InformerFactory gives access to informers for the controller.
+	InformerFactory informers.SharedInformerFactory
 }
 
 // LocalPVConfig defines the parameters for creating a local PV
@@ -119,6 +139,7 @@ type LocalPVConfig struct {
 	HostPath        string
 	Capacity        int64
 	StorageClass    string
+	ReclaimPolicy   v1.PersistentVolumeReclaimPolicy
 	ProvisionerName string
 	UseAlphaAPI     bool
 	AffinityAnn     string
@@ -145,6 +166,13 @@ type ProvisionerConfiguration struct {
 	NodeLabelsForPV []string `json:"nodeLabelsForPV" yaml:"nodeLabelsForPV"`
 	// UseAlphaAPI shows if we need to use alpha API, default to false
 	UseAlphaAPI bool `json:"useAlphaAPI" yaml:"useAlphaAPI"`
+	// UseJobForCleaning indicates if Jobs should be spawned for cleaning block devices (as opposed to process),
+	// default is false.
+	// +optional
+	UseJobForCleaning bool `json:"useJobForCleaning" yaml:"useJobForCleaning"`
+	// MinResyncPeriod is minimum resync period. Resync period in reflectors
+	// will be random between MinResyncPeriod and 2*MinResyncPeriod.
+	MinResyncPeriod metav1.Duration `json:"minResyncPeriod" yaml:"minResyncPeriod"`
 }
 
 // CreateLocalPVSpec returns a PV spec that can be used for PV creation
@@ -158,7 +186,7 @@ func CreateLocalPVSpec(config *LocalPVConfig) *v1.PersistentVolume {
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
-			PersistentVolumeReclaimPolicy: v1.PersistentVolumeReclaimDelete,
+			PersistentVolumeReclaimPolicy: config.ReclaimPolicy,
 			Capacity: v1.ResourceList{
 				v1.ResourceName(v1.ResourceStorage): *resource.NewQuantity(int64(config.Capacity), resource.BinarySI),
 			},
@@ -175,7 +203,7 @@ func CreateLocalPVSpec(config *LocalPVConfig) *v1.PersistentVolume {
 		},
 	}
 	if config.UseAlphaAPI {
-		pv.ObjectMeta.Annotations[v1.AlphaStorageNodeAffinityAnnotation] = config.AffinityAnn
+		pv.ObjectMeta.Annotations[AlphaStorageNodeAffinityAnnotation] = config.AffinityAnn
 	} else {
 		pv.Spec.NodeAffinity = config.NodeAffinity
 	}
@@ -252,6 +280,11 @@ func ConfigMapDataToVolumeConfig(data map[string]string, provisionerConfig *Prov
 			return fmt.Errorf("Storage Class %v is misconfigured, missing HostDir or MountDir parameter", class)
 		}
 		provisionerConfig.StorageClassConfig[class] = config
+		glog.Infof("StorageClass %q configured with MountDir %q, HostDir %q, BlockCleanerCommand %q",
+			class,
+			config.MountDir,
+			config.HostDir,
+			config.BlockCleanerCommand)
 	}
 	return nil
 }
@@ -315,4 +348,12 @@ func SetupClient() *kubernetes.Clientset {
 		glog.Fatalf("Error creating clientset: %v\n", err)
 	}
 	return clientset
+}
+
+// GenerateMountName generates a volumeMount.name for pod spec, based on volume configuration.
+func GenerateMountName(mount *MountConfig) string {
+	h := fnv.New32a()
+	h.Write([]byte(mount.HostDir))
+	h.Write([]byte(mount.MountDir))
+	return fmt.Sprintf("mount-%x", h.Sum32())
 }

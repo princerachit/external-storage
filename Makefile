@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-all: aws/efs ceph/cephfs ceph/rbd flex gluster/block gluster/glusterfs gluster/file iscsi/targetd local-volume/provisioner nfs-client nfs snapshot openstack/standalone-cinder
+all: aws/efs ceph/cephfs ceph/rbd flex gluster/block gluster/glusterfs gluster/file iscsi/targetd local-volume/provisioner nfs-client nfs snapshot
 .PHONY: all
 
-clean: clean-aws/efs clean-ceph/cephfs clean-ceph/rbd clean-flex clean-gluster/block clean-gluster/glusterfs clean-iscsi/targetd clean-local-volume/provisioner clean-nfs-client clean-nfs clean-openebs clean-snapshot clean-openstack/standalone-cinder
+clean: clean-aws/efs clean-ceph/cephfs clean-ceph/rbd clean-flex clean-gluster/block clean-gluster/glusterfs clean-iscsi/targetd clean-local-volume/provisioner clean-nfs-client clean-nfs clean-openebs clean-snapshot
 .PHONY: clean
 
-
-test: test-aws/efs test-local-volume/provisioner test-nfs test-snapshot test-openstack/standalone-cinder
+test: test-aws/efs test-local-volume/provisioner test-nfs test-snapshot
 .PHONY: test
 
 verify:
@@ -127,6 +126,11 @@ test-local-volume/provisioner:
 	go test ./...
 .PHONY: test-local-volume/provisioner
 
+test-local-volume/helm:
+	cd local-volume/helm; \
+	./test/run.sh
+.PHONY: test-local-volume/helm
+
 clean-local-volume/provisioner:
 	cd local-volume/provisioner; \
 	make clean
@@ -142,12 +146,12 @@ clean-nfs-client:
 	rm -f nfs-client-provisioner
 .PHONY: clean-nfs-client
 
-nfs: 
+nfs:
 	cd nfs; \
 	make container
 .PHONY: nfs
 
-test-nfs: 
+test-nfs:
 	cd nfs; \
 	make test
 .PHONY: test-nfs
@@ -181,21 +185,6 @@ clean-snapshot:
 	cd snapshot; \
 	make clean
 .PHONY: clean-snapshot
-
-openstack/standalone-cinder:
-	cd openstack/standalone-cinder; \
-	make
-.PHONY: openstack/standalone-cinder
-
-test-openstack/standalone-cinder:
-	cd openstack/standalone-cinder; \
-	make test
-.PHONY: test-openstack/standalone-cinder
-
-clean-openstack/standalone-cinder:
-	cd openstack/standalone-cinder; \
-	make clean
-.PHONY: clean-openstack/standalone-cinder
 
 test-snapshot:
 	cd snapshot; \
@@ -251,6 +240,11 @@ push-nfs-provisioner:
 	cd nfs; \
 	make push
 .PHONY: push-nfs-provisioner
+
+push-flex-provisioner:
+	cd flex; \
+	make push
+.PHONY: push-flex-provisioner
 
 push-openebs-provisioner:
 	cd openebs; \
