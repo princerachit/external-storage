@@ -183,11 +183,7 @@ func (h *openEBSPlugin) FindSnapshot(tags *map[string]string) (*crdv1.VolumeSnap
 	glog.Infof("FindSnapshot by tags: %#v", *tags)
 
 	// TODO: Implement FindSnapshot
-	return &crdv1.VolumeSnapshotDataSource{
-		OpenEBSSnapshot: &crdv1.OpenEBSVolumeSnapshotSource{
-			SnapshotID: "",
-		},
-	}, nil, nil
+	return nil, nil, fmt.Errorf("Snapshot not found")
 }
 
 // SnapshotRestore restore to any created snapshot
