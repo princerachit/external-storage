@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -419,7 +420,20 @@ func NewProvisionController(
 	} else {
 		eventRecorder = broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: fmt.Sprintf("%s %s %s", provisionerName, strings.TrimSpace(string(out)), string(identity))})
 	}
-
+	var CustomTermLimit time.Duration
+	leaseTimeout, ok := os.LookupEnv("OPENEBS_IO_PROVISIONER_LEASE_TIMEOUT")
+	if !ok {
+		// TermLimit is the maximum duration that a leader may remain the leader
+		// to complete the task before it must give up its leadership.
+		// Defaults to 30 seconds.
+		CustomTermLimit = DefaultTermLimit
+	} else {
+		CustomTermLimit, err = time.ParseDuration(leaseTimeout)
+		if err != nil {
+			glog.Fatalf("lease timeout parsing error :", err)
+		}
+	}
+	glog.Infof("using provisioner termLimit seconds:%s", CustomTermLimit.String())
 	controller := &ProvisionController{
 		client:                        client,
 		provisionerName:               provisionerName,
@@ -436,7 +450,7 @@ func NewProvisionController(
 		leaseDuration:                 DefaultLeaseDuration,
 		renewDeadline:                 DefaultRenewDeadline,
 		retryPeriod:                   DefaultRetryPeriod,
-		termLimit:                     DefaultTermLimit,
+		termLimit:                     CustomTermLimit,
 		metricsPort:                   DefaultMetricsPort,
 		metricsAddress:                DefaultMetricsAddress,
 		metricsPath:                   DefaultMetricsPath,
