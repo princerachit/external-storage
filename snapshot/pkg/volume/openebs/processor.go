@@ -53,18 +53,18 @@ func RegisterPlugin() volume.Plugin {
 	feature, err := util.CASTemplateFeatureGate()
 	// if feature is set then return openEBSv1alpha1Plugin
 	if err == nil && feature {
-		return &openEBSv1alpha1Plugin
+		return &openEBSv1alpha1Plugin{}
 	}
-	return &openEBSPlugin
+	return &openEBSPlugin{}
 }
 
 func init() {
 	feature, err := util.CASTemplateFeatureGate()
 	// if feature is set then use openEBSv1alpha1Plugin
 	if err == nil && feature {
-		&openEBSv1alpha1Plugin{}.GetMayaService()
+		(&openEBSv1alpha1Plugin{}).GetMayaService()
 	} else {
-		_ = &openEBSPlugin{}.GetMayaService()
+		_ = (&openEBSPlugin{}).GetMayaService()
 	}
 }
 
