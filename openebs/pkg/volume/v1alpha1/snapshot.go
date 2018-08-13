@@ -144,10 +144,9 @@ func (v CASVolume) RevertSnapshot(volName string, snapName string) (string, erro
 	snap.Metadata.Name = snapName
 	snap.Spec.VolumeName = volName
 
-	url := addr + "/latest/snapshots/"
+	url := addr + "/latest/snapshots"
 
 	yamlValue, _ := yaml.Marshal(snap)
-
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(yamlValue))
 
 	req.Header.Add("Content-Type", "application/yaml")
@@ -183,11 +182,46 @@ func (v CASVolume) RevertSnapshot(volName string, snapName string) (string, erro
 }
 
 func (v CASVolume) SnapshotInfo(volName string, snapName string) (string, error) {
-
 	return "Not implemented", nil
 }
 
-func (v CASVolume) DeleteSnapshot(snapName string) (string, error) {
+func (v CASVolume) DeleteSnapshot(volName, snapName string) (string, error) {
+	addr := os.Getenv("MAPI_ADDR")
+	if addr == "" {
+		err := errors.New("MAPI_ADDR environment variable not set")
+		return "", err
+	}
+	url := addr + "/latest/snapshots/" + snapName
 
-	return "Not implemented", nil
+	glog.V(2).Infof("[DEBUG] Deleting snapshot :%s for volume:%s", snapName, volName)
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	c := &http.Client{
+		Timeout: timeout,
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		glog.Errorf("Error when connecting to maya-apiserver %v", err)
+		return "", err
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Errorf("Unable to read response from maya-apiserver %v", err)
+		return "", err
+	}
+	code := resp.StatusCode
+	if err == nil && code != http.StatusOK {
+		return "", fmt.Errorf(string(data))
+	}
+	if code != http.StatusOK {
+		glog.Errorf("HTTP Status error from maya-apiserver: %v\n", http.StatusText(code))
+		return "", err
+	}
+	glog.V(2).Info("volume Details Successfully Retrieved")
+	return "", json.NewDecoder(resp.Body).Decode(obj)
 }
