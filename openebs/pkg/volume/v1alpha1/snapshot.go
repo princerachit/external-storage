@@ -185,7 +185,7 @@ func (v CASVolume) SnapshotInfo(volName string, snapName string) (string, error)
 	return "Not implemented", nil
 }
 
-func (v CASVolume) DeleteSnapshot(volName, snapName string) (string, error) {
+func (v CASVolume) DeleteSnapshot(volName, snapName, namespace string) (string, error) {
 	addr := os.Getenv("MAPI_ADDR")
 	if addr == "" {
 		err := errors.New("MAPI_ADDR environment variable not set")
@@ -193,13 +193,15 @@ func (v CASVolume) DeleteSnapshot(volName, snapName string) (string, error) {
 	}
 	url := addr + "/latest/snapshots/" + snapName
 
-	glog.V(2).Infof("[DEBUG] Deleting snapshot :%s for volume:%s", snapName, volName)
+	glog.V(2).Infof("[DEBUG] Deleting snapshot :%s of volume:%s", snapName, volName)
 
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return "", err
 	}
 
+	req.Header.Set("volume-name", volName)
+	req.Header.Set("namespace", namespace)
 	c := &http.Client{
 		Timeout: timeout,
 	}
@@ -223,5 +225,5 @@ func (v CASVolume) DeleteSnapshot(volName, snapName string) (string, error) {
 		return "", err
 	}
 	glog.V(2).Info("volume Details Successfully Retrieved")
-	return "", json.NewDecoder(resp.Body).Decode(obj)
+	return string(data), nil
 }
