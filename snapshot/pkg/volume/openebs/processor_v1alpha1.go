@@ -19,9 +19,10 @@ package openebs
 import (
 	"fmt"
 	"os"
+	"strings"
 
-	mvol_v1alpha1 "github.com/kubernetes-incubator/external-storage/openebs/pkg/volume/v1alpha1"
 	"github.com/kubernetes-incubator/external-storage/openebs/pkg/apis/openebs.io/v1alpha1"
+	mvol_v1alpha1 "github.com/kubernetes-incubator/external-storage/openebs/pkg/volume/v1alpha1"
 
 	"github.com/golang/glog"
 	crdv1 "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
@@ -166,14 +167,14 @@ func (h *openEBSv1alpha1Plugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapsh
 		var newvolume mayav1.Volume
 		var openebsCASVol mvol_v1alpha1.CASVolume
 		casVolume := v1alpha1.CASVolume{}
-		volumeSpec := CreateCloneVolumeSpec(snapshotData, pvc, pvName)
+		volumeSpec := h.CreateCloneVolumeSpec(snapshotData, pvc, pvName)
 
 		err := openebsCASVol.CreateVolume(casVolume)
 		if err != nil {
 			glog.Errorf("Error creating volume: %v", err)
 			return nil, nil, err
 		}
-		err = openebsCASVol.ReadVolume(pvName, pvc.Namespace, &newvolume)
+		err = openebsCASVol.ReadVolume(pvName, pvc.Namespace)
 		if err != nil {
 			glog.Errorf("Error getting volume details: %v", err)
 			return nil, nil, err
@@ -205,8 +206,7 @@ func (h *openEBSv1alpha1Plugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapsh
 				ReadOnly:     false,
 			},
 		}
-		return pv, nil, nil
-	*/
+		return pv, nil, nil*/
 	return nil, nil, nil
 }
 
@@ -248,70 +248,42 @@ func (h *openEBSv1alpha1Plugin) CreateCloneVolumeSpec(snapshotData *crdv1.Volume
 	pvc *v1.PersistentVolumeClaim,
 	pvName string,
 ) v1alpha1.CASVolume {
-	/*
-	   //Issue a request to Maya API Server to create a volume
-	   	var openebsCASVol mv1alpha1.CASVolume
-	   	casVolume := v1alpha1.CASVolume{}
 
-	   	volSize := options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	   	casVolume.Spec.Capacity = volSize.String()
+	//Issue a request to Maya API Server to create a volume
+	var openebsCASVol mvol_v1alpha1.CASVolume
+	// creating a map b/c have to initialize the map using the make function before
+	// adding any elements to avoid nil map assignment error
+	mapLabels := make(map[string]string)
 
-	   	className := GetStorageClassName(options)
+	casVolume := v1alpha1.CASVolume{}
 
-	   	// creating a map b/c have to initialize the map using the make function before
-	   	// adding any elements to avoid nil map assignment error
-	   	mapLabels := make(map[string]string)
-
-	   	if className == nil {
-	   		glog.Errorf("Volume has no storage class specified")
-	   	} else {
-	   		mapLabels[string(v1alpha1.StorageClassKey)] = *className
-	   		casVolume.Labels = mapLabels
-	   	}
-	   	PVName := options.PVC.Namespace + "-" + options.PVC.Name
-	   	casVolume.Labels[string(v1alpha1.NamespaceKey)] = options.PVC.Namespace
-	   	casVolume.Namespace = options.PVC.Namespace
-	   	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimKey)] = options.PVC.ObjectMeta.Name
-	   	casVolume.Name = PVName
-
-
-	// restore snapshot to a PV
-	// get the snaphot ID and source volume
 	snapshotID := snapshotData.Spec.OpenEBSSnapshot.SnapshotID
-	pvRefName := snapshotData.Spec.PersistentVolumeRef.Name
-	//pvRefNamespace := snapshotData.Spec.PersistentVolumeRef.Namespace
-	casVolume := mvol_v1alpha1.CASVolume{}
-
 	volSize := pvc.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	casVolume..
-	Capacity = volSize.String()
+	casVolume.Spec.Capacity = volSize.String()
+	pvRefName := snapshotData.Spec.PersistentVolumeRef.Name
 
 	// Get the source PV storage class name which will be passed
-	// to maya-apiserver to extract volume policy while restoring snapshot as
+	// to maya-apiserver to extract volume cas templates while restoring snapshot as
 	// new volume.
-	pvRefStorageClass, err := GetStorageClass(pvRefName)
+	scName, err := GetStorageClass(pvRefName)
 	if err != nil {
 		glog.Errorf("Error getting volume details: %v", err)
 	}
-	if len(pvRefStorageClass) == 0 {
+	if len(strings.TrimSpace(scName)) == 0 {
 		glog.Errorf("Volume has no storage class specified")
-	} else {
-		volumeSpec.Metadata.Labels.StorageClass = pvRefStorageClass
 	}
-	glog.Infof("Using the Storage Class %s for dynamic provisioning", pvRefStorageClass)
 
-	// construct volumespec for volume create request.
+	// construct casvolume for volume create request.
 	// Enable volume clone: set clone as true, enables openebs volume to be created
 	// as a clone volume
-	volSize := pvc.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	casVolume.Metadata.Labels.Storage = volSize.String()
-	casVolume.Metadata.Labels.PersistentVolumeClaim = pvc.ObjectMeta.Name
-	casVolume.Metadata.Labels.Namespace = pvc.Namespace
-	casVolume.Metadata.Name = pvName
-	casVolume.SnapshotName = snapshotID
-	casVolume.Clone = true
-	casVolume.SourceVolume = pvRefName
+	mapLabels[string(v1alpha1.StorageClassKey)] = scName
+	casVolume.Labels = mapLabels
+	casVolume.Labels[string(v1alpha1.NamespaceKey)] = pvc.Namespace
+	casVolume.Namespace = pvc.Namespace
+	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimKey)] = pvc.Name
+	casVolume.Name = pvName
 
-	*/
-	return v1alpha1.CASVolume{}
+	glog.Infof("Using the Storage Class %s for dynamic provisioning", pvRefStorageClass)
+
+	return casVolume
 }

@@ -105,7 +105,7 @@ func (v CASVolume) ListSnapshot(volName string, snapname string, namespace strin
 	}
 
 	req.Header.Set("namespace", namespace)
-
+	req.Header.Set("volume-name", volName)
 	c := &http.Client{
 		Timeout: timeout,
 	}
@@ -133,6 +133,7 @@ func (v CASVolume) ListSnapshot(volName string, snapname string, namespace strin
 }
 
 // RevertSnapshot revert a snapshot of volume by invoking the API call to m-apiserver
+// TODO: This method is not tested, test it.
 func (v CASVolume) RevertSnapshot(volName string, snapName string) (string, error) {
 	addr := os.Getenv("MAPI_ADDR")
 	if addr == "" {
