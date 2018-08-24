@@ -22,10 +22,10 @@ import (
 	"strings"
 	"time"
 
-	mvol "github.com/kubernetes-incubator/external-storage/openebs/pkg/volume"
-	mayav1 "github.com/kubernetes-incubator/external-storage/openebs/types/v1"
-
 	"github.com/golang/glog"
+	"github.com/kubernetes-incubator/external-storage/openebs/pkg/apis/openebs.io/v1alpha1"
+	"github.com/kubernetes-incubator/external-storage/openebs/pkg/provisioner"
+	mvol_v1alpha1 "github.com/kubernetes-incubator/external-storage/openebs/pkg/volume/v1alpha1"
 	crdv1 "github.com/kubernetes-incubator/external-storage/snapshot/pkg/apis/crd/v1"
 	"github.com/kubernetes-incubator/external-storage/snapshot/pkg/cloudprovider"
 	"github.com/kubernetes-incubator/external-storage/snapshot/pkg/volume"
@@ -39,7 +39,7 @@ const (
 )
 
 type openEBSPlugin struct {
-	mvol.OpenEBSVolume
+	mvol_v1alpha1.CASVolume
 }
 
 var _ volume.Plugin = &openEBSPlugin{}
@@ -201,30 +201,20 @@ func (h *openEBSPlugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapshotData,
 	}
 
 	// restore snapshot to a PV
-	var newvolume mayav1.Volume
-	var openebsVol mvol.OpenEBSVolume
+	var newVolume v1alpha1.CASVolume
+	var openebsVol mvol_v1alpha1.CASVolume
 
-	volumeSpec := CreateCloneVolumeSpec(snapshotData, pvc, pvName)
+	volumeSpec, class := CreateCloneVolumeSpec(snapshotData, pvc, pvName)
 
 	err := openebsVol.CreateVolume(volumeSpec)
 	if err != nil {
 		glog.Errorf("Error creating volume: %v", err)
 		return nil, nil, err
 	}
-	err = openebsVol.ListVolume(pvName, pvc.Namespace, &newvolume)
+	err = openebsVol.ReadVolume(pvName, pvc.Namespace, class, &newVolume)
 	if err != nil {
 		glog.Errorf("Error getting volume details: %v", err)
 		return nil, nil, err
-	}
-
-	var iqn, targetPortal string
-	for key, value := range newvolume.Metadata.Annotations.(map[string]interface{}) {
-		switch key {
-		case "vsm.openebs.io/iqn":
-			iqn = value.(string)
-		case "vsm.openebs.io/targetportals":
-			targetPortal = value.(string)
-		}
 	}
 
 	if err != nil {
@@ -234,16 +224,20 @@ func (h *openEBSPlugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapshotData,
 
 	glog.V(1).Infof("snapshot restored successfully to: %v", snapshotData.Spec.OpenEBSSnapshot.SnapshotID)
 
+	vollabels := make(map[string]string)
+	vollabels = provisioner.Setlink(vollabels, pvName)
+	vollabels["openebs.io/cas-type"] = newVolume.Spec.CasType
+
 	pv := &v1.PersistentVolumeSource{
 		ISCSI: &v1.ISCSIPersistentVolumeSource{
-			TargetPortal: targetPortal,
-			IQN:          iqn,
+			TargetPortal: newVolume.Spec.TargetPortal,
+			IQN:          newVolume.Spec.Iqn,
 			Lun:          0,
 			FSType:       "ext4",
 			ReadOnly:     false,
 		},
 	}
-	return pv, nil, nil
+	return pv, vollabels, nil
 }
 
 // VolumeDelete deletes the persistent volume
@@ -251,7 +245,7 @@ func (h *openEBSPlugin) VolumeDelete(pv *v1.PersistentVolume) error {
 	if pv == nil || pv.Spec.ISCSI == nil {
 		return fmt.Errorf("invalid VolumeSnapshotDataSource: %v", pv)
 	}
-	var openebsVol mvol.OpenEBSVolume
+	var openebsVol mvol_v1alpha1.CASVolume
 
 	err := openebsVol.DeleteVolume(pv.Name, pv.Spec.ClaimRef.Namespace)
 	if err != nil {
@@ -266,9 +260,10 @@ func GetMayaService() error {
 	if err != nil {
 		return err
 	}
-	var openebsObj mvol.OpenEBSVolume
+	var openebsVol mvol_v1alpha1.CASVolume
+
 	//Get maya-apiserver IP address from cluster
-	addr, err := openebsObj.GetMayaClusterIP(client)
+	addr, err := openebsVol.GetMayaClusterIP(client)
 	if err != nil {
 		glog.Errorf("Error getting maya-apiserver IP Address: %v", err)
 		return err
@@ -319,14 +314,17 @@ func GetNameAndNameSpaceFromSnapshotName(name string) (string, string, error) {
 func CreateCloneVolumeSpec(snapshotData *crdv1.VolumeSnapshotData,
 	pvc *v1.PersistentVolumeClaim,
 	pvName string,
-) mayav1.VolumeSpec {
+) (vol v1alpha1.CASVolume,
+	class string) {
 
 	// restore snapshot to a PV
 	// get the snaphot ID and source volume
 	snapshotID := snapshotData.Spec.OpenEBSSnapshot.SnapshotID
 	pvRefName := snapshotData.Spec.PersistentVolumeRef.Name
 	//pvRefNamespace := snapshotData.Spec.PersistentVolumeRef.Namespace
-	volumeSpec := mayav1.VolumeSpec{}
+	casVolume := v1alpha1.CASVolume{}
+
+	mapLabels := make(map[string]string)
 
 	// Get the source PV storage class name which will be passed
 	// to maya-apiserver to extract volume policy while restoring snapshot as
@@ -338,7 +336,9 @@ func CreateCloneVolumeSpec(snapshotData *crdv1.VolumeSnapshotData,
 	if len(pvRefStorageClass) == 0 {
 		glog.Errorf("Volume has no storage class specified")
 	} else {
-		volumeSpec.Metadata.Labels.StorageClass = pvRefStorageClass
+
+		mapLabels[string("openebs.io/storageclass")] = pvRefStorageClass
+		casVolume.Labels = mapLabels
 	}
 	glog.Infof("Using the Storage Class %s for dynamic provisioning", pvRefStorageClass)
 
@@ -346,13 +346,14 @@ func CreateCloneVolumeSpec(snapshotData *crdv1.VolumeSnapshotData,
 	// Enable volume clone: set clone as true, enables openebs volume to be created
 	// as a clone volume
 	volSize := pvc.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
-	volumeSpec.Metadata.Labels.Storage = volSize.String()
-	volumeSpec.Metadata.Labels.PersistentVolumeClaim = pvc.ObjectMeta.Name
-	volumeSpec.Metadata.Labels.Namespace = pvc.Namespace
-	volumeSpec.Metadata.Name = pvName
-	volumeSpec.SnapshotName = snapshotID
-	volumeSpec.Clone = true
-	volumeSpec.SourceVolume = pvRefName
+	casVolume.Spec.Capacity = volSize.String()
+	casVolume.Namespace = pvc.Namespace
+	casVolume.Labels[string(v1alpha1.NamespaceKey)] = pvc.Namespace
+	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimKey)] = pvc.ObjectMeta.Name
+	casVolume.ObjectMeta.Name = pvName
+	casVolume.CloneSpec.SnapshotName = snapshotID
+	casVolume.CloneSpec.IsClone = true
+	casVolume.CloneSpec.SourceVolume = pvRefName
 
-	return volumeSpec
+	return casVolume, pvRefStorageClass
 }
