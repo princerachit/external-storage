@@ -19,6 +19,7 @@ package provisioner
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/golang/glog"
@@ -99,17 +100,30 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimKey)] = options.PVC.ObjectMeta.Name
 	casVolume.Name = PVName
 
-	err := openebsCASVol.CreateVolume(casVolume)
-	if err != nil {
-		glog.Errorf("Failed to create volume:  %+v, error: %s", options, err.Error())
+	// Check if volume already exists
+	// if present then return the read values
+	// if unexpected error then return the error
+	// if absent then create volume
+	err := openebsCASVol.ReadVolume(PVName, options.PVC.Namespace, *className, &casVolume)
+	if err == nil {
+		glog.Infof("Volume already present returning read values")
+	} else if err.Error() != http.StatusText(404) {
+		// any error other than 404 is unexpected error
 		return nil, err
+	} else if err.Error() == http.StatusText(404) {
+		// Create the volume and read it
+		err = openebsCASVol.CreateVolume(casVolume)
+		if err != nil {
+			glog.Errorf("Failed to create volume:  %+v, error: %s", options, err.Error())
+			return nil, err
+		}
+		err = openebsCASVol.ReadVolume(PVName, options.PVC.Namespace, *className, &casVolume)
+		if err != nil {
+			glog.Errorf("Failed to read volume: %v", err)
+			return nil, err
+		}
+		glog.V(2).Infof("VolumeInfo: created volume metadata : %#v", casVolume)
 	}
-	err = openebsCASVol.ReadVolume(PVName, options.PVC.Namespace, *className, &casVolume)
-	if err != nil {
-		glog.Errorf("Failed to read volume: %v", err)
-		return nil, err
-	}
-	glog.V(2).Infof("VolumeInfo: created volume metadata : %#v", casVolume)
 
 	if !util.AccessModesContainedInAll(p.GetAccessModes(), options.PVC.Spec.AccessModes) {
 		glog.Errorf("Invalid Access Modes: %v, Supported Access Modes: %v", options.PVC.Spec.AccessModes, p.GetAccessModes())
