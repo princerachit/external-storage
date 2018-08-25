@@ -104,7 +104,7 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 	// if present then return the read values
 	// if unexpected error then return the error
 	// if absent then create volume
-	glog.V(2).Infof("Checking if volume already exists")
+	glog.V(2).Infof("Checking if volume %q already exists", PVName)
 	err := openebsCASVol.ReadVolume(PVName, options.PVC.Namespace, *className, &casVolume)
 	if err == nil {
 		glog.V(2).Infof("Volume %q already present", PVName)
@@ -114,7 +114,7 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 		return nil, err
 	} else if err.Error() == http.StatusText(404) {
 		// Create the volume and read it
-		glog.V(2).Infof("Atttempting to create volume")
+		glog.V(2).Infof("Volume %q does not exist,attempting to create volume", PVName)
 		err = openebsCASVol.CreateVolume(casVolume)
 		if err != nil {
 			glog.Errorf("Failed to create volume:  %+v, error: %s", options, err.Error())
