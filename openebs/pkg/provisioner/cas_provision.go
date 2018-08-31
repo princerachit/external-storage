@@ -155,8 +155,8 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 				ISCSI: &v1.ISCSIPersistentVolumeSource{
 					TargetPortal: casVolume.Spec.TargetPortal,
 					IQN:          casVolume.Spec.Iqn,
-					Lun:          0,
-					FSType:       casVolume.Spec.FsType,
+					Lun:          casVolume.Spec.Lun,
+					FSType:       casVolume.Spec.FSType,
 					ReadOnly:     false,
 				},
 			},

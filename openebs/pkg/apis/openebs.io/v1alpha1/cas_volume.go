@@ -129,7 +129,9 @@ type CASVolumeSpec struct {
 	// CasType will hold the storage engine used to provision this volume
 	CasType string `json:"casType"`
 	// FSType willl hold the file system of the volume
-	FsType string `json:"fsType"`
+	FSType string `json:"fsType"`
+	// LUN willl hold the lun of the volume
+	Lun int32 `json:"lun"`
 	// TODO add controller and replica status
 }
 
