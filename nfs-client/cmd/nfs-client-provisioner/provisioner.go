@@ -22,11 +22,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+
+	"k8s.io/kubernetes/pkg/apis/core/v1/helper"
 
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/external-storage/lib/controller"
 	"k8s.io/api/core/v1"
+	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -96,9 +100,49 @@ func (p *nfsProvisioner) Delete(volume *v1.PersistentVolume) error {
 	path := volume.Spec.PersistentVolumeSource.NFS.Path
 	pvName := filepath.Base(path)
 	oldPath := filepath.Join(mountPath, pvName)
+	if _, err := os.Stat(oldPath); os.IsNotExist(err) {
+		glog.Warningf("path %s does not exist, deletion skipped", oldPath)
+		return nil
+	}
+	// Get the storage class for this volume.
+	storageClass, err := p.getClassForVolume(volume)
+	if err != nil {
+		return err
+	}
+	// Determine if the "archiveOnDelete" parameter exists.
+	// If it exists and has a falsey value, delete the directory.
+	// Otherwise, archive it.
+	archiveOnDelete, exists := storageClass.Parameters["archiveOnDelete"]
+	if exists {
+		archiveBool, err := strconv.ParseBool(archiveOnDelete)
+		if err != nil {
+			return err
+		}
+		if !archiveBool {
+			return os.RemoveAll(oldPath)
+		}
+	}
+
 	archivePath := filepath.Join(mountPath, "archived-"+pvName)
 	glog.V(4).Infof("archiving path %s to %s", oldPath, archivePath)
 	return os.Rename(oldPath, archivePath)
+
+}
+
+// getClassForVolume returns StorageClass
+func (p *nfsProvisioner) getClassForVolume(pv *v1.PersistentVolume) (*storage.StorageClass, error) {
+	if p.client == nil {
+		return nil, fmt.Errorf("Cannot get kube client")
+	}
+	className := helper.GetPersistentVolumeClass(pv)
+	if className == "" {
+		return nil, fmt.Errorf("Volume has no storage class")
+	}
+	class, err := p.client.StorageV1().StorageClasses().Get(className, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return class, nil
 }
 
 func main() {
@@ -137,6 +181,7 @@ func main() {
 	}
 
 	clientNFSProvisioner := &nfsProvisioner{
+		client: clientset,
 		server: server,
 		path:   path,
 	}
