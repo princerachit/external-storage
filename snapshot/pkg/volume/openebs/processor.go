@@ -68,16 +68,9 @@ func (h *openEBSPlugin) SnapshotCreate(snapshot *crdv1.VolumeSnapshot, pv *v1.Pe
 		return nil, nil, fmt.Errorf("invalid PV spec %v", spec)
 	}
 
-	// GetMayaService get the maya-service endpoint
-	//err := GetMayaService()
-	//if err != nil {
-	//	return nil, nil, err
-	//}
-
-	// snapObj is volumesnapshot object name
 	snapObj := (*tags)["kubernetes.io/created-for/snapshot/name"]
 	snapshotName := createSnapshotName(pv.Name, snapObj)
-	_, err := h.CreateSnapshot(pv.Name, snapshotName, pv.Spec.ClaimRef.Namespace)
+	_, err := h.CreateSnapshot(pv.Annotations["openebs.io/cas-type"], pv.Name, snapshotName, pv.Spec.ClaimRef.Namespace)
 	if err != nil {
 		glog.Errorf("failed to create snapshot for volume :%v, err: %v", pv.Name, err)
 		return nil, nil, err
@@ -347,6 +340,7 @@ func CreateCloneVolumeSpec(snapshotData *crdv1.VolumeSnapshotData,
 	// as a clone volume
 	volSize := pvc.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
 	casVolume.Spec.Capacity = volSize.String()
+	casVolume.Annotations["openebs.io/cas-type"] = casVolume.Spec.CasType
 	casVolume.Namespace = pvc.Namespace
 	casVolume.Labels[string(v1alpha1.NamespaceKey)] = pvc.Namespace
 	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimKey)] = pvc.ObjectMeta.Name
