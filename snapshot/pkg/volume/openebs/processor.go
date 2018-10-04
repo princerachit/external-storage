@@ -70,7 +70,11 @@ func (h *openEBSPlugin) SnapshotCreate(snapshot *crdv1.VolumeSnapshot, pv *v1.Pe
 
 	snapObj := (*tags)["kubernetes.io/created-for/snapshot/name"]
 	snapshotName := createSnapshotName(pv.Name, snapObj)
-	_, err := h.CreateSnapshot(pv.Annotations["openebs.io/cas-type"], pv.Name, snapshotName, pv.Spec.ClaimRef.Namespace)
+	casType := pv.Annotations["openebs.io/cas-type"]
+	if casType == "" {
+		casType = "jiva"
+	}
+	_, err := h.CreateSnapshot(casType, pv.Name, snapshotName, pv.Spec.ClaimRef.Namespace)
 	if err != nil {
 		glog.Errorf("failed to create snapshot for volume :%v, err: %v", pv.Name, err)
 		return nil, nil, err

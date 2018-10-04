@@ -40,8 +40,6 @@ func (v CASVolume) CreateSnapshot(castype, volName, snapName, namespace string) 
 
 	var snap v1alpha1.CASSnapshot
 
-	snap.Kind = "VolumeSnapshot"
-	snap.APIVersion = "v1"
 	snap.Namespace = namespace
 	snap.Name = snapName
 	snap.Spec.CasType = castype

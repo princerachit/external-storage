@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The OpenEBS Authors.
+Copyright 2017 The OpenEBS Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,27 +25,27 @@ type CASSnapshot struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// Spec i.e. specifications of this cas snapshot
-	Spec CASSnapshotSpec `json:"spec"`
+	Spec SnapshotSpec `json:"spec"`
 }
 
-// CASSnapshotSpec has the properties of a cas snapshot
-type CASSnapshotSpec struct {
+// SnapshotSpec has the properties of a cas snapshot
+type SnapshotSpec struct {
 	CasType    string `json:"casType"`
-	VolumeName string `json:"volName"`
+	VolumeName string `json:"volumeName"`
 }
 
-// CASSnapshotListSpec has the properties of a cas snapshot list
-type CASSnapshotListSpec struct {
-	CasType    string `json:"casType"`
-	VolumeName string `json:"volName"`
-	Namespace  string `json:"namespace"`
+// SnapshotListOptions has the properties of a cas snapshot list
+type SnapshotListOptions struct {
+	CasType    string `json:"casType,omitempty"`
+	VolumeName string `json:"volumeName,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
 }
 
 // CASSnapshotList is a list of CASSnapshot resources
 type CASSnapshotList struct {
 	metav1.TypeMeta `json:",inline"`
-	// Spec will contain the volume name and cas type for which snapshots is listed
-	Spec CASSnapshotListSpec
+	// Options will contain the volume name and cas type for which snapshots is listed
+	Options SnapshotListOptions
 	// Items are the list of volumes
 	Items []CASSnapshot `json:"items"`
 }
