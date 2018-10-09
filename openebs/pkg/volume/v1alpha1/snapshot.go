@@ -56,7 +56,6 @@ func (v CASVolume) CreateSnapshot(castype, volName, snapName, namespace string) 
 
 	req.Header.Add("Content-Type", "application/json")
 
-	req.Header.Set("namespace", namespace)
 	c := &http.Client{
 		Timeout: timeout,
 	}
@@ -186,7 +185,50 @@ func (v CASVolume) SnapshotInfo(volName string, snapName string) (string, error)
 	return "Not implemented", nil
 }
 
-func (v CASVolume) DeleteSnapshot(snapName string) (string, error) {
+func (v CASVolume) DeleteSnapshot(castype, volName, snapName, namespace string) (string, error) {
+	addr := os.Getenv("MAPI_ADDR")
+	if addr == "" {
+		err := errors.New("MAPI_ADDR environment variable not set")
+		return "Error getting maya-apiserver IP Address", err
+	}
 
-	return "Not implemented", nil
+	url := addr + "/latest/snapshots/" + snapName
+
+	req, err := http.NewRequest("DELETE", url, nil)
+
+	glog.Infof("Deleting snapshot %s of %s volume %s in namespace %s", snapName, castype, volName, namespace)
+	// Add query params
+	q := req.URL.Query()
+	q.Add("volume", volName)
+	q.Add("namespace", namespace)
+	q.Add("casType", castype)
+
+	// Add query params to req
+	req.URL.RawQuery = q.Encode()
+
+	c := &http.Client{
+		Timeout: timeout,
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		glog.Errorf("Error when connecting maya-apiserver %v", err)
+		return "Could not connect to maya-apiserver", err
+	}
+	defer resp.Body.Close()
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Errorf("Unable to read response from maya-apiserver %v", err)
+		return "Unable to read response from maya-apiserver", err
+	}
+
+	code := resp.StatusCode
+	if err == nil && code != http.StatusOK {
+		return "HTTP Status error from maya-apiserver", fmt.Errorf(string(data))
+	}
+	if code != http.StatusOK {
+		glog.Errorf("Status error: %v\n", http.StatusText(code))
+		return "HTTP Status error from maya-apiserver", err
+	}
+	return string(data), nil
 }

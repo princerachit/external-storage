@@ -121,15 +121,19 @@ func (h *openEBSPlugin) SnapshotDelete(src *crdv1.VolumeSnapshotDataSource, pv *
 	if src == nil || src.OpenEBSSnapshot == nil {
 		return fmt.Errorf("invalid VolumeSnapshotDataSource: %v", src)
 	}
-	snapshotID := src.OpenEBSSnapshot.SnapshotID
-	glog.V(1).Infof("Received snapshot :%v delete request", snapshotID)
 
-	_, err := h.DeleteSnapshot(snapshotID)
-	if err != nil {
-		glog.Errorf("failed to delete snapshot: %v, err: %v", snapshotID, err)
+	casType := pv.Annotations["openebs.io/cas-type"]
+	if casType == "" {
+		casType = "jiva"
 	}
 
-	glog.V(1).Infof("snapshot deleted :%v successfully", snapshotID)
+	_, err := h.DeleteSnapshot(casType, pv.Name, src.OpenEBSSnapshot.SnapshotID, pv.Spec.ClaimRef.Namespace)
+	if err != nil {
+		glog.Errorf("failed to create snapshot for volume :%v, err: %v", pv.Name, err)
+		return err
+	}
+
+	glog.V(1).Infof("snapshot deleted :%v successfully", src.OpenEBSSnapshot.SnapshotID)
 	return err
 }
 
