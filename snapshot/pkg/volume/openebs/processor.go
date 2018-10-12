@@ -348,7 +348,6 @@ func CreateCloneVolumeSpec(snapshotData *crdv1.VolumeSnapshotData,
 	// as a clone volume
 	volSize := pvc.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
 	casVolume.Spec.Capacity = volSize.String()
-	casVolume.Annotations["openebs.io/cas-type"] = casVolume.Spec.CasType
 	casVolume.Namespace = pvc.Namespace
 	casVolume.Labels[string(v1alpha1.NamespaceKey)] = pvc.Namespace
 	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimKey)] = pvc.ObjectMeta.Name
