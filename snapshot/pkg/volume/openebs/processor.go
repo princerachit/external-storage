@@ -68,16 +68,13 @@ func (h *openEBSPlugin) SnapshotCreate(snapshot *crdv1.VolumeSnapshot, pv *v1.Pe
 		return nil, nil, fmt.Errorf("invalid PV spec %v", spec)
 	}
 
-	// GetMayaService get the maya-service endpoint
-	//err := GetMayaService()
-	//if err != nil {
-	//	return nil, nil, err
-	//}
-
-	// snapObj is volumesnapshot object name
 	snapObj := (*tags)["kubernetes.io/created-for/snapshot/name"]
 	snapshotName := createSnapshotName(pv.Name, snapObj)
-	_, err := h.CreateSnapshot(pv.Name, snapshotName, pv.Spec.ClaimRef.Namespace)
+	casType := pv.Annotations["openebs.io/cas-type"]
+	if casType == "" {
+		casType = "jiva"
+	}
+	_, err := h.CreateSnapshot(casType, pv.Name, snapshotName, pv.Spec.ClaimRef.Namespace)
 	if err != nil {
 		glog.Errorf("failed to create snapshot for volume :%v, err: %v", pv.Name, err)
 		return nil, nil, err
@@ -124,15 +121,19 @@ func (h *openEBSPlugin) SnapshotDelete(src *crdv1.VolumeSnapshotDataSource, pv *
 	if src == nil || src.OpenEBSSnapshot == nil {
 		return fmt.Errorf("invalid VolumeSnapshotDataSource: %v", src)
 	}
-	snapshotID := src.OpenEBSSnapshot.SnapshotID
-	glog.V(1).Infof("Received snapshot :%v delete request", snapshotID)
 
-	_, err := h.DeleteSnapshot(snapshotID)
-	if err != nil {
-		glog.Errorf("failed to delete snapshot: %v, err: %v", snapshotID, err)
+	casType := pv.Annotations["openebs.io/cas-type"]
+	if casType == "" {
+		casType = "jiva"
 	}
 
-	glog.V(1).Infof("snapshot deleted :%v successfully", snapshotID)
+	_, err := h.DeleteSnapshot(casType, pv.Name, src.OpenEBSSnapshot.SnapshotID, pv.Spec.ClaimRef.Namespace)
+	if err != nil {
+		glog.Errorf("failed to create snapshot for volume :%v, err: %v", pv.Name, err)
+		return err
+	}
+
+	glog.V(1).Infof("snapshot deleted :%v successfully", src.OpenEBSSnapshot.SnapshotID)
 	return err
 }
 
