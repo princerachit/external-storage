@@ -226,7 +226,7 @@ func (h *openEBSPlugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapshotData,
 
 	vollabels := make(map[string]string)
 	vollabels = provisioner.Setlink(vollabels, pvName)
-	vollabels[string(v1alpha1.CASConfigKey)] = newVolume.Spec.CasType
+	vollabels[string(v1alpha1.CASTypeKey)] = newVolume.Spec.CasType
 	vollabels[string(v1alpha1.StorageClassKey)] = class
 
 	pv := &v1.PersistentVolumeSource{
