@@ -31,7 +31,6 @@ import (
 	"github.com/kubernetes-incubator/external-storage/snapshot/pkg/volume"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/apis/core"
 )
 
 const (
@@ -227,7 +226,8 @@ func (h *openEBSPlugin) SnapshotRestore(snapshotData *crdv1.VolumeSnapshotData,
 
 	vollabels := make(map[string]string)
 	vollabels = provisioner.Setlink(vollabels, pvName)
-	vollabels["openebs.io/cas-type"] = newVolume.Spec.CasType
+	vollabels[string(v1alpha1.CASTypeKey)] = newVolume.Spec.CasType
+	vollabels[string(v1alpha1.StorageClassKey)] = class
 
 	pv := &v1.PersistentVolumeSource{
 		ISCSI: &v1.ISCSIPersistentVolumeSource{
@@ -278,8 +278,8 @@ func GetMayaService() error {
 
 // GetPersistentVolumeClass returns StorageClassName
 func GetPersistentVolumeClass(volume *v1.PersistentVolume) string {
-	// Use beta annotation first
-	if class, found := volume.Annotations[core.BetaStorageClassAnnotation]; found {
+	// Use label first
+	if class, found := volume.Labels[string(v1alpha1.StorageClassKey)]; found {
 		return class
 	}
 
