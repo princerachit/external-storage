@@ -22,13 +22,13 @@ if [ ${CI_TAG} != "ci" ]; then
   sudo docker tag openebs/snapshot-provisioner:ci openebs/snapshot-provisioner:${CI_TAG}
 fi
 
-kubectl apply -f https://raw.githubusercontent.com/openebs/openebs/master/k8s/openebs-operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/openebs/openebs/${CI_BRANCH}/k8s/openebs-operator.yaml
 
 for i in $(seq 1 50) ; do
     replicas=$(kubectl get deployment -n openebs maya-apiserver -o json | jq ".status.readyReplicas")
     if [ "$replicas" == "1" ]; then
         break
-			else
+    else
         echo "Waiting Maya-apiserver to be ready"
         sleep 10
     fi
@@ -140,8 +140,8 @@ for i in $(seq 1 100) ; do
     # count should be 3 as one header line would also be present
     if [ "$count" == "3" ]; then
         break
-	else
-        echo "snapshot/(s) not created yet, count: $count"
+    else
+        echo "snapshot/(s) not created yet"
         kubectl get volumesnapshot,volumesnapshotdata
         sleep 10
     fi
