@@ -82,6 +82,8 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 
 	className := GetStorageClassName(options)
 
+	pvcOperatorAccount := options.PVC.Annotations[string(v1alpha1.PVCOperatorAccountKey)]
+
 	// creating a map b/c have to initialize the map using the make function before
 	// adding any elements to avoid nil map assignment error
 	mapLabels := make(map[string]string)
@@ -97,13 +99,14 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 	casVolume.Namespace = options.PVC.Namespace
 	casVolume.Labels[string(v1alpha1.PersistentVolumeClaimKey)] = options.PVC.ObjectMeta.Name
 	casVolume.Name = options.PVName
+	casVolume.Labels[string(v1alpha1.PVCOperatorAccountKey)] = pvcOperatorAccount
 
 	// Check if volume already exists
 	// if present then return the read values
 	// if unexpected error then return the error
 	// if absent then create volume
 	glog.V(2).Infof("Checking if volume %q already exists", options.PVName)
-	err := openebsCASVol.ReadVolume(options.PVName, options.PVC.Namespace, *className, &casVolume)
+	err := openebsCASVol.ReadVolume(options.PVName, options.PVC.Namespace, *className, pvcOperatorAccount, &casVolume)
 	if err == nil {
 		glog.V(2).Infof("Volume %q already present", options.PVName)
 	} else if err.Error() != http.StatusText(404) {
@@ -118,7 +121,7 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 			glog.Errorf("Failed to create volume:  %+v, error: %s", options, err.Error())
 			return nil, err
 		}
-		err = openebsCASVol.ReadVolume(options.PVName, options.PVC.Namespace, *className, &casVolume)
+		err = openebsCASVol.ReadVolume(options.PVName, options.PVC.Namespace, *className, pvcOperatorAccount, &casVolume)
 		if err != nil {
 			glog.Errorf("Failed to read volume: %v", err)
 			return nil, err
@@ -141,6 +144,9 @@ func (p *openEBSCASProvisioner) Provision(options controller.VolumeOptions) (*v1
 	labels := make(map[string]string)
 	labels[string(v1alpha1.CASTypeKey)] = casVolume.Spec.CasType
 	labels[string(v1alpha1.StorageClassKey)] = *className
+	if pvcOperatorAccount != "" {
+		labels[string(v1alpha1.PVCOperatorAccountKey)] = pvcOperatorAccount
+	}
 
 	var volumeMode *v1.PersistentVolumeMode
 	volumeMode = options.PVC.Spec.VolumeMode
@@ -208,7 +214,7 @@ func (p *openEBSCASProvisioner) Delete(volume *v1.PersistentVolume) error {
 	*/
 
 	// Issue a delete request to Maya API Server
-	err := openebsCASVol.DeleteVolume(volume.Name, volume.Spec.ClaimRef.Namespace)
+	err := openebsCASVol.DeleteVolume(volume.Name, volume.Labels[string(v1alpha1.PVCOperatorAccountKey)], volume.Spec.ClaimRef.Namespace)
 	if err != nil {
 		glog.Errorf("Failed to delete volume %s, error: %s", volume, err.Error())
 		return err

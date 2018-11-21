@@ -134,7 +134,7 @@ func (v CASVolume) CreateVolume(vol v1alpha1.CASVolume) error {
 }
 
 // ReadVolume to get the info of CAS volume through a API call to m-apiserver
-func (v CASVolume) ReadVolume(vname, namespace, storageclass string, obj interface{}) error {
+func (v CASVolume) ReadVolume(vname, namespace, storageclass, pvcOperator string, obj interface{}) error {
 
 	addr := os.Getenv("MAPI_ADDR")
 	if addr == "" {
@@ -142,7 +142,10 @@ func (v CASVolume) ReadVolume(vname, namespace, storageclass string, obj interfa
 		return err
 	}
 	url := addr + "/latest/volumes/" + vname
-
+	// pass operator account if present
+	if pvcOperator != "" {
+		url = url + "?pvc-operator-account=" + pvcOperator
+	}
 	glog.V(2).Infof("[DEBUG] Get details for Volume :%v", string(vname))
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -175,7 +178,7 @@ func (v CASVolume) ReadVolume(vname, namespace, storageclass string, obj interfa
 }
 
 // DeleteVolume to get delete CAS volume through a API call to m-apiserver
-func (v CASVolume) DeleteVolume(vname string, namespace string) error {
+func (v CASVolume) DeleteVolume(vname, pvcOperator, namespace string) error {
 
 	addr := os.Getenv("MAPI_ADDR")
 	if addr == "" {
@@ -183,6 +186,10 @@ func (v CASVolume) DeleteVolume(vname string, namespace string) error {
 		return err
 	}
 	url := addr + "/latest/volumes/" + vname
+	// pass operator account if present
+	if pvcOperator != "" {
+		url = url + "?pvc-operator-account=" + pvcOperator
+	}
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
